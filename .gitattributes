@@ -1,0 +1,22 @@
+# Noetica (ENG-268). Upstream ships no .gitattributes, so on a default Windows clone
+# (core.autocrlf=true) the generation inputs arrive as CRLF — and sofia's awk splits its
+# templates on form-feed + LF with BINMODE=rw. Nothing then matches the record separator
+# and the scripts produce empty or garbled output *while exiting 0*, with no error.
+#
+# These rules make the LF requirement a property of the checkout rather than an
+# instruction someone has to have read. The CI workflow still sets core.autocrlf=false
+# and asserts the result; that is now belt-and-braces instead of the only defence.
+#
+# Scope is deliberately the generation inputs, not the whole tree: a blanket rule would
+# rewrite every file in an upstream fork and make merges from freeswitch/sofia-sip noisy.
+
+*.awk           text eol=lf
+*.in            text eol=lf
+configure.ac    text eol=lf
+
+# Read by build_sources.cmd alongside the .h.in templates.
+libsofia-sip-ua/sip/sip_extra_headers.txt   text eol=lf
+libsofia-sip-ua/sip/sip_bad_mask            text eol=lf
+
+# The .cmd scripts are run by cmd.exe, which is happy either way; left alone so they
+# match whatever upstream ships.

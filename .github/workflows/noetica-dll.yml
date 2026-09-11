@@ -1,9 +1,14 @@
 # Builds libsofia_sip_ua.dll for the Noetica NVP DSP (ENG-268).
 #
 # Noetica-specific addition to this fork; nothing upstream depends on it. It produces
-# the DLL and import lib as artifacts for both configurations, and keeps the UNPATCHED
-# artifacts available as the documented rollback for the nta_msg_ackbye patch that lands
-# on a later branch.
+# the DLL and import lib as artifacts for both configurations.
+#
+# These artifacts are NOT a rollback store: workflow artifacts expire (14 days on this
+# repo), and the artifact names carry no commit, so a later patched branch - also matched
+# by feature/ENG-** below - produces identically named ones. Before the nta_msg_ackbye
+# patch ships, the unpatched DLL needs keeping somewhere durable and identifiable, e.g. a
+# GitHub Release on this fork with its SHA256 recorded. Until then the rollback for the
+# DSP is reverting its linkage commit and rebuilding.
 #
 # Everything this workflow does by hand is deliberate; see the header comment in
 # win32/libsofia-sip-ua/libsofia_sip_ua_dll.vcxproj for why.
@@ -64,10 +69,16 @@ jobs:
         run: |
           # Belt and braces for the silent-empty-header failure above: a ref checkout
           # does not re-materialise line endings, so prove it rather than assume it.
-          $eol = git ls-files --eol -- libsofia-sip-ua/msg/msg_parser.awk libsofia-sip-ua/sip/sofia-sip/sip_protos.h.in configure.ac
+          $paths = 'libsofia-sip-ua/msg/msg_parser.awk','libsofia-sip-ua/sip/sofia-sip/sip_protos.h.in','configure.ac'
+          $eol = @(git ls-files --eol -- $paths)
           $eol
+          # A typo'd path makes ls-files print nothing, which would pass this check while
+          # proving nothing. Assert we actually inspected every file.
+          if ($eol.Count -ne $paths.Count) {
+            throw "Expected $($paths.Count) eol rows, got $($eol.Count) - a probe path is wrong."
+          }
           if ($eol | Where-Object { $_ -match 'w/crlf' }) {
-            throw 'Checkout has CRLF line endings; generation would silently emit empty files.'
+            throw 'Checkout has CRLF line endings; generation would produce empty or garbled output.'
           }
 
       - name: Add MSBuild to PATH
@@ -83,8 +94,10 @@ jobs:
           AWK: gawk
         run: |
           set PATH=C:\Program Files\Git\usr\bin;%PATH%
-          call build_sources.cmd || exit /b 1
-          call version_files.cmd || exit /b 1
+          rem .\ is required where NoDefaultCurrentDirectoryInExePath=1 is set (some
+          rem Noetica workstations); harmless on the runner, which does not set it.
+          call .\build_sources.cmd || exit /b 1
+          call .\version_files.cmd || exit /b 1
 
       # awk exits 0 even when the record separator never matched, so check the outputs.
       - name: Verify generated output is not empty
@@ -139,10 +152,20 @@ jobs:
           Write-Host "exports: $($exports.Count)"
           # A macro-driven surface either works wholesale or collapses, so spot-check the
           # entry points the DSP actually calls plus the ENG-248 patch target.
-          $need = 'nua_create','nua_bye','nua_handle_destroy','nta_msg_ackbye','su_home_new','tport_tcreate'
+          # nutag_url_ref is a SOFIAPUBVAR tag global: it comes from the macro-driven
+          # surface, not from the *_tag_ref.c files' own dllexport, so it is the one that
+          # disappears if LIBSOFIA_SIP_UA_STATIC creeps back in.
+          $need = 'nua_create','nua_bye','nua_handle_destroy','nta_msg_ackbye','su_home_new','tport_tcreate','nutag_url_ref'
           $missing = @($need | Where-Object { $_ -notin $exports })
           if ($missing) { throw ("Expected exports absent: " + ($missing -join ', ')) }
-          if ($exports.Count -lt 500) { throw "Only $($exports.Count) exports; the surface looks collapsed." }
+          # Exact, not a floor. Defining LIBSOFIA_SIP_UA_STATIC still links but collapses
+          # the surface to the ~618 symbols the tag_ref files export themselves, which a
+          # loose floor would wave through. Bump this deliberately when the source list or
+          # the export macros change - a diff here is a real change in what the DSP can call.
+          $expected = 3123
+          if ($exports.Count -ne $expected) {
+            throw "Export count is $($exports.Count), expected $expected. If this is intended, update the expected value in this workflow."
+          }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

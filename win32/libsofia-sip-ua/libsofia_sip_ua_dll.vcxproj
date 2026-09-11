@@ -14,7 +14,10 @@
   EXPORTS are macro-driven: IN_LIBSOFIA_SIP_UA and IN_LIBSOFIA_SRES make SOFIAPUBFUN and
   SRESPUBFUN expand to __declspec(dllexport) (su_config.h, sres_config.h). The
   LIBSOFIA_SIP_UA_STATIC / LIBSRES_STATIC defines the static build uses must NOT be set
-  here - they suppress those macros entirely, and the link would fail on every symbol.
+  here - they suppress those macros entirely. Note the failure is SILENT, not a link
+  error: the DLL still builds, but exports collapse to only the ~618 symbols the twelve
+  generated *_tag_ref.c files dllexport themselves. The CI export-count check is what
+  catches that, so do not weaken it.
 
   Upstream's sofia-sip-ua.def is deliberately NOT used, though it looks like the safer
   declarative option. It is stale and over-broad for this source set: linking against it
