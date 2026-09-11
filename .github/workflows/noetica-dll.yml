@@ -1,0 +1,155 @@
+# Builds libsofia_sip_ua.dll for the Noetica NVP DSP (ENG-268).
+#
+# Noetica-specific addition to this fork; nothing upstream depends on it. It produces
+# the DLL and import lib as artifacts for both configurations, and keeps the UNPATCHED
+# artifacts available as the documented rollback for the nta_msg_ackbye patch that lands
+# on a later branch.
+#
+# Everything this workflow does by hand is deliberate; see the header comment in
+# win32/libsofia-sip-ua/libsofia_sip_ua_dll.vcxproj for why.
+
+name: Noetica DLL
+
+on:
+  push:
+    branches:
+      - 'feature/ENG-**'
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: libsofia_sip_ua.dll (${{ matrix.configuration }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+
+    steps:
+      # core.autocrlf=false is NOT optional. The generation awk splits templates on
+      # form-feed + LF with BINMODE=rw; on a CRLF checkout no record separator matches
+      # and the scripts write EMPTY headers while exiting 0, with no error at all.
+      - name: Configure git for LF checkout
+        run: git config --global core.autocrlf false
+
+      - name: Checkout sofia-sip
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Pinned third-party dependencies. Both are public, so no token is needed.
+      # pthreads: sofia's win32 config sets SU_HAVE_PTHREADS 1, so su_port.h includes
+      # pthread.h - it is a hard compile dependency, not optional.
+      - name: Checkout pinned pthreads-win32
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Noetica/pthreads-win32
+          path: .deps/pthreads-win32
+
+      # openssl: tport_tls.c includes six OpenSSL headers, and a DLL must resolve the
+      # symbols a static lib could defer to its consumer.
+      - name: Checkout pinned openssl-win64
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Noetica/openssl-win64
+          path: .deps/openssl-win64
+
+      - name: Verify the checkout really has LF line endings
+        shell: pwsh
+        run: |
+          # Belt and braces for the silent-empty-header failure above: a ref checkout
+          # does not re-materialise line endings, so prove it rather than assume it.
+          $eol = git ls-files --eol -- libsofia-sip-ua/msg/msg_parser.awk libsofia-sip-ua/sip/sofia-sip/sip_protos.h.in configure.ac
+          $eol
+          if ($eol | Where-Object { $_ -match 'w/crlf' }) {
+            throw 'Checkout has CRLF line endings; generation would silently emit empty files.'
+          }
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3.0.0
+
+      # Two separate generation scripts, both required. build_sources.cmd writes 17 of the
+      # 171 sources; version_files.cmd writes sofia_features.h AND win32/config.h, without
+      # which every sdp/soa/tport source fails C1083.
+      - name: Generate sources and headers
+        shell: cmd
+        working-directory: win32
+        env:
+          AWK: gawk
+        run: |
+          set PATH=C:\Program Files\Git\usr\bin;%PATH%
+          call build_sources.cmd || exit /b 1
+          call version_files.cmd || exit /b 1
+
+      # awk exits 0 even when the record separator never matched, so check the outputs.
+      - name: Verify generated output is not empty
+        shell: pwsh
+        run: |
+          $required = @(
+            'libsofia-sip-ua/sip/sip_tag.c',
+            'libsofia-sip-ua/sip/sip_parser_table.c',
+            'libsofia-sip-ua/msg/msg_mime_table.c',
+            'libsofia-sip-ua/http/http_tag.c',
+            'libsofia-sip-ua/nua/nua_tag_ref.c',
+            'libsofia-sip-ua/features/sofia-sip/sofia_features.h',
+            'win32/config.h'
+          )
+          $bad = @()
+          foreach ($f in $required) {
+            if (-not (Test-Path $f)) { $bad += "$f missing"; continue }
+            $len = (Get-Item $f).Length
+            if ($len -lt 200) { $bad += "$f only $len bytes" }
+          }
+          if ($bad) { throw ("Generation produced no usable output: " + ($bad -join '; ')) }
+          # config.h with an unsubstituted placeholder would compile to a literal "@FOO@".
+          if ((Get-Content 'win32/config.h' -Raw) -match '@[A-Za-z_]+@') {
+            throw 'win32/config.h still contains an unsubstituted placeholder.'
+          }
+
+      - name: Build
+        run: >
+          msbuild win32\libsofia-sip-ua\libsofia_sip_ua_dll.vcxproj
+          /p:Configuration=${{ matrix.configuration }}
+          /p:Platform=x64
+          /p:PthreadsDir=${{ github.workspace }}\.deps\pthreads-win32\src
+          /p:OpenSslDir=${{ github.workspace }}\.deps\openssl-win64
+          /v:minimal
+
+      # The DSP links this import lib, so an incomplete export surface is the failure mode
+      # that matters. A bare "it built" says nothing about that.
+      - name: Check the export surface
+        shell: pwsh
+        run: |
+          $dll = "build/${{ matrix.configuration }}/libsofia_sip_ua.dll"
+          $lib = "build/${{ matrix.configuration }}/libsofia_sip_ua.lib"
+          foreach ($f in $dll, $lib) {
+            if (-not (Test-Path $f)) { throw "$f was not produced." }
+            Write-Host ("{0} - {1:N0} bytes" -f $f, (Get-Item $f).Length)
+          }
+          $dumpbin = (Get-ChildItem 'C:\Program Files*\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe' |
+            Select-Object -Last 1).FullName
+          $exports = & $dumpbin /EXPORTS $dll |
+            Select-String -Pattern '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value }
+          Write-Host "exports: $($exports.Count)"
+          # A macro-driven surface either works wholesale or collapses, so spot-check the
+          # entry points the DSP actually calls plus the ENG-248 patch target.
+          $need = 'nua_create','nua_bye','nua_handle_destroy','nta_msg_ackbye','su_home_new','tport_tcreate'
+          $missing = @($need | Where-Object { $_ -notin $exports })
+          if ($missing) { throw ("Expected exports absent: " + ($missing -join ', ')) }
+          if ($exports.Count -lt 500) { throw "Only $($exports.Count) exports; the surface looks collapsed." }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: libsofia_sip_ua-${{ matrix.configuration }}
+          path: |
+            build/${{ matrix.configuration }}/libsofia_sip_ua.dll
+            build/${{ matrix.configuration }}/libsofia_sip_ua.lib
+            build/${{ matrix.configuration }}/libsofia_sip_ua.pdb
+          if-no-files-found: error

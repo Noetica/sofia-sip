@@ -70,3 +70,12 @@ test-driver
 utils/sip-date
 utils/sip-dig
 utils/sip-options
+
+# Noetica (ENG-268): byproducts of win32/build_sources.cmd that upstream's rules miss.
+# tag_dll.awk emits both the _tag_ref.c variant (used, and ignored above) and a
+# _tag_dll.c variant (unused by the DLL project) plus msg_tag_ref.c.
+libsofia-sip-ua/*/*_tag_dll.c
+libsofia-sip-ua/msg/msg_tag_ref.c
+
+# Output directory of win32/libsofia-sip-ua/libsofia_sip_ua_dll.vcxproj
+build/
