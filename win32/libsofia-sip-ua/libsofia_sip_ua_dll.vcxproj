@@ -1,0 +1,291 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  libsofia_sip_ua.dll - the sofia-sip DLL the NVP DSP links (ENG-268).
+
+  Replaces the prebuilt static libsofia_sip_ua_static.lib of unknown provenance.
+  Upstream ships libsofia_sip_ua.vcproj here, but it is VS2005 (Version="8.00") and
+  modern VS no longer upgrades .vcproj - hence a new project rather than an upgrade.
+
+  The SOURCE LIST is FreeSWITCH's (libs/win32/sofia/libsofia_sip_ua_static.2017.vcxproj
+  in Noetica/nvp_freeswitch), NOT upstream's DLL project. Upstream's omits tport_tls.c,
+  tport_type_tls.c, tport_type_ws.c, ws.c and su_string.c - so it would silently drop TLS,
+  which the DSP registers over. FreeSWITCH's list is what built the library we ship.
+
+  EXPORTS are macro-driven: IN_LIBSOFIA_SIP_UA and IN_LIBSOFIA_SRES make SOFIAPUBFUN and
+  SRESPUBFUN expand to __declspec(dllexport) (su_config.h, sres_config.h). The
+  LIBSOFIA_SIP_UA_STATIC / LIBSRES_STATIC defines the static build uses must NOT be set
+  here - they suppress those macros entirely. Note the failure is SILENT, not a link
+  error: the DLL still builds, but exports collapse to only the ~618 symbols the twelve
+  generated *_tag_ref.c files dllexport themselves. The CI export-count check is what
+  catches that, so do not weaken it.
+
+  Upstream's sofia-sip-ua.def is deliberately NOT used, though it looks like the safer
+  declarative option. It is stale and over-broad for this source set: linking against it
+  gave 32 unresolved externals. Some of those symbols no longer exist anywhere in 1.13.14
+  (auth_mod_check_ireq); others live in files FreeSWITCH excludes (nta_msg_send and
+  nta_leg_stateful, in nta_compat.c). Checked against the artifact we actually ship: none
+  of the 32 are in libsofia_sip_ua_static.lib either, so the 171-file list is right and
+  the .def is wrong for it. It would also double-export the *_tag_ref.c symbols, which
+  carry their own __declspec(dllexport) (LNK4197).
+
+  17 of the sources are GENERATED (sip_tag.c, msg_mime_table.c, http_tag.c, twelve
+  *_tag_ref.c, ...), and sofia_features.h + win32\config.h are generated too. Run BOTH
+  win32\build_sources.cmd and win32\version_files.cmd before building, from a checkout
+  with LF line endings - the awk splits templates on form-feed+LF and silently emits
+  empty output on a CRLF checkout. version_files.cmd is what writes win32\config.h;
+  without it every sdp/soa/tport source fails C1083 on config.h.
+
+  Dependencies come from pinned Noetica mirrors, overridable for CI:
+    PthreadsDir  - Noetica/pthreads-win32  (pthread.h; sofia sets SU_HAVE_PTHREADS 1)
+    OpenSslDir   - Noetica/openssl-win64   (headers + static libs for tport_tls.c)
+  The OpenSSL libs are /MT built with /Zl, so they carry no CRT directive and link into
+  this /MD DLL. Do not "correct" that apparent mismatch; treat LNK4098 as a real finding.
+-->
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{6F5B4A2E-9C31-4D7A-BE58-1E0D3C7A4B91}</ProjectGuid>
+    <RootNamespace>libsofia_sip_ua</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <PropertyGroup Label="NoeticaDependencies">
+    <PthreadsDir Condition="'$(PthreadsDir)'==''">$(MSBuildThisFileDirectory)..\..\..\pthreads-win32\src</PthreadsDir>
+    <OpenSslDir Condition="'$(OpenSslDir)'==''">$(MSBuildThisFileDirectory)..\..\..\openssl-win64</OpenSslDir>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <TargetName>libsofia_sip_ua</TargetName>
+    <OutDir>$(MSBuildThisFileDirectory)..\..\build\$(Configuration)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\..\build\obj\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>..;..\..\libsofia-sip-ua\su;..\..\libsofia-sip-ua\ipt;..\..\libsofia-sip-ua\sresolv;..\..\libsofia-sip-ua\bnf;..\..\libsofia-sip-ua\url;..\..\libsofia-sip-ua\msg;..\..\libsofia-sip-ua\sip;..\..\libsofia-sip-ua\nta;..\..\libsofia-sip-ua\nua;..\..\libsofia-sip-ua\iptsec;..\..\libsofia-sip-ua\http;..\..\libsofia-sip-ua\nth;..\..\libsofia-sip-ua\nea;..\..\libsofia-sip-ua\sdp;..\..\libsofia-sip-ua\soa;..\..\libsofia-sip-ua\stun;..\..\libsofia-sip-ua\tport;..\..\libsofia-sip-ua\tport\include;..\..\libsofia-sip-ua\features;$(PthreadsDir);$(OpenSslDir)\include;.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_DEBUG;_TIMESPEC_DEFINED;WIN32;_WIN64;_WINDOWS;_USRDLL;IN_LIBSOFIA_SIP_UA;IN_LIBSOFIA_SRES;HAVE_IPHLPAPI_H;SU_DEBUG=0;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <Optimization>Disabled</Optimization>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>pthread.lib;libssl.lib;libcrypto.lib;ws2_32.lib;iphlpapi.lib;crypt32.lib;secur32.lib;bcrypt.lib;advapi32.lib;user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(PthreadsDir)\..\prebuilt;$(OpenSslDir)\lib\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>..;..\..\libsofia-sip-ua\su;..\..\libsofia-sip-ua\ipt;..\..\libsofia-sip-ua\sresolv;..\..\libsofia-sip-ua\bnf;..\..\libsofia-sip-ua\url;..\..\libsofia-sip-ua\msg;..\..\libsofia-sip-ua\sip;..\..\libsofia-sip-ua\nta;..\..\libsofia-sip-ua\nua;..\..\libsofia-sip-ua\iptsec;..\..\libsofia-sip-ua\http;..\..\libsofia-sip-ua\nth;..\..\libsofia-sip-ua\nea;..\..\libsofia-sip-ua\sdp;..\..\libsofia-sip-ua\soa;..\..\libsofia-sip-ua\stun;..\..\libsofia-sip-ua\tport;..\..\libsofia-sip-ua\tport\include;..\..\libsofia-sip-ua\features;$(PthreadsDir);$(OpenSslDir)\include;.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;_TIMESPEC_DEFINED;WIN32;_WIN64;_WINDOWS;_USRDLL;IN_LIBSOFIA_SIP_UA;IN_LIBSOFIA_SRES;HAVE_IPHLPAPI_H;SU_DEBUG=0;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <Optimization>MaxSpeed</Optimization>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>pthread.lib;libssl.lib;libcrypto.lib;ws2_32.lib;iphlpapi.lib;crypt32.lib;secur32.lib;bcrypt.lib;advapi32.lib;user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(PthreadsDir)\..\prebuilt;$(OpenSslDir)\lib\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\libsofia-sip-ua\su\inet_ntop.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\inet_pton.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\smoothsort.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\string0.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_addrinfo.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_alloc.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_alloc_lock.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_base_port.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_bm.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_default_log.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_errno.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_global_log.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_localinfo.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_log.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_md5.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_os_nw.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_port.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_pthread_port.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_root.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_socket_port.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_sprintf.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_strdup.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_string.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_strlst.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_tag.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_tag_io.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_taglist.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_time.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_time0.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_timer.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_uniqueid.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_vector.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_wait.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\su_win32_port.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\ipt\base64.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\ipt\rc4.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\ipt\token64.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\url\url.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\url\url_tag.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\url\url_tag_ref.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\features\features.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\bnf\bnf.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\msg\msg.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\msg\msg_auth.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\msg\msg_basic.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\msg\msg_date.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\msg\msg_generic.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\msg\msg_header_copy.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\msg\msg_header_make.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\msg\msg_mclass.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\msg\msg_mime.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\msg\msg_mime_table.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\msg\msg_parser.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\msg\msg_parser_util.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\msg\msg_tag.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\memcspn.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\memmem.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\memspn.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\su\strcasestr.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_basic.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_caller_prefs.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_event.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_extra.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_feature.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_header.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_mime.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_parser.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_parser_table.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_prack.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_pref_util.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_reason.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_refer.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_security.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_session.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_status.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_tag.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_tag_class.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_tag_ref.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_time.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sip\sip_util.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\http\http_basic.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\http\http_extra.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\http\http_header.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\http\http_parser.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\http\http_parser_table.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\http\http_status.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\http\http_tag.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\http\http_tag_class.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\http\http_tag_ref.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nth\nth_client.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nth\nth_server.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nth\nth_tag.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nth\nth_tag_ref.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sresolv\sres.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sresolv\sres_blocking.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sresolv\sres_cache.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sresolv\sres_sip.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sresolv\sresolv.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nea\nea.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nea\nea_debug.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nea\nea_event.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nea\nea_server.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nea\nea_tag.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nea\nea_tag_ref.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\iptsec\auth_client.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\iptsec\auth_common.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\iptsec\auth_digest.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\iptsec\auth_module.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\iptsec\auth_module_http.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\iptsec\auth_module_sip.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\iptsec\auth_plugin.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\iptsec\auth_plugin_delayed.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\iptsec\auth_tag.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\iptsec\auth_tag_ref.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\iptsec\iptsec_debug.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\stun\stun.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\stun\stun_common.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\stun\stun_dns.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\stun\stun_mini.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\stun\stun_tag.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\stun\stun_tag_ref.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_client.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_common.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_dialog.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_event_server.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_extension.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_message.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_notifier.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_options.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_params.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_publish.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_register.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_registrar.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_server.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_session.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_stack.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_subnotref.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_tag.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\nua_tag_ref.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nua\outbound.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nta\nta.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nta\nta_check.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nta\nta_tag.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nta\nta_tag_ref.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nta\sl_read_payload.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nta\sl_utils_log.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\nta\sl_utils_print.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\tport\tport.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\tport\tport_logging.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\tport\tport_stub_sigcomp.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\tport\tport_stub_stun.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\tport\tport_tag.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\tport\tport_tag_ref.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\tport\tport_tls.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\tport\tport_type_connect.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\tport\tport_type_tcp.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\tport\tport_type_ws.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\tport\ws.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\tport\tport_type_tls.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\tport\tport_type_udp.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sdp\sdp.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sdp\sdp_parse.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sdp\sdp_print.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sdp\sdp_tag.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\sdp\sdp_tag_ref.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\soa\soa.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\soa\soa_static.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\soa\soa_tag.c" />
+    <ClCompile Include="..\..\libsofia-sip-ua\soa\soa_tag_ref.c" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
