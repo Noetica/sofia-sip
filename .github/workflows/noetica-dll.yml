@@ -48,12 +48,19 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned third-party dependencies. Both are public, so no token is needed.
+      # The ref on each is what makes that pinning real. Without one, actions/checkout
+      # takes whatever the mirror's default branch points at on the day the job runs, so
+      # a mirror update changes the DLL with no change in this repository: the sofia
+      # source is pinned by this repo's own ref, but the headers and libs the DLL links
+      # directly would float. Bumping either SHA is therefore a deliberate act - pair it
+      # with a rebuild, and re-check the export count asserted below.
       # pthreads: sofia's win32 config sets SU_HAVE_PTHREADS 1, so su_port.h includes
       # pthread.h - it is a hard compile dependency, not optional.
       - name: Checkout pinned pthreads-win32
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Noetica/pthreads-win32
+          ref: 5bdad503547a53219b84148c514d9f1fc60c6a17 # main @ 2026-09-16
           path: .deps/pthreads-win32
 
       # openssl: tport_tls.c includes six OpenSSL headers, and a DLL must resolve the
@@ -62,6 +69,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Noetica/openssl-win64
+          ref: 871ab865ae0dec66e0d984ae028e52dfdce3df8b # main @ 2026-09-16
           path: .deps/openssl-win64
 
       - name: Verify the checkout really has LF line endings
