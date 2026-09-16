@@ -15,14 +15,19 @@
 
 name: Noetica DLL
 
+# noetica/** is the integration base, not master. master tracks upstream (v1.13.18 and
+# moving), while the DSP builds from the pinned v1.13.14 commit - so the Noetica DLL
+# project lives on a branch sharing the pin's base and is never merged to master.
+# Building master would produce a different sofia than the DSP links. ENG-560 covers
+# taking upstream deliberately, with its own regression gate.
 on:
   push:
     branches:
       - 'feature/ENG-**'
-      - master
+      - 'noetica/**'
   pull_request:
     branches:
-      - master
+      - 'noetica/**'
   workflow_dispatch:
 
 permissions:
